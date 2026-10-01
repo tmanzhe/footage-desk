@@ -1,41 +1,64 @@
 # Footage Desk
 
-A local video workspace: import footage, tag clips, select moments, arrange a rough cut, and export a video. No account, backend, or API key required.
+A workspace for turning a folder of footage into a first cut. Import clips, find useful moments, drag the trim handles, arrange the moments, and export a video.
 
-## Run
-
-From this folder:
+## Run it
 
 ```sh
-python3 -m http.server 8765 --bind 127.0.0.1
+bun install
+bun run dev
 ```
 
-Open http://localhost:8765 in current Chrome or Edge. Other browsers may have different playback and recording format support.
-
-## Try it
-
-1. Import an H.264 MP4, or click **Try sample footage** to generate three short animated clips locally.
-2. Open a clip. Add tags and notes, and save its details.
-3. Drag the IN and OUT handles on the filmstrip to select a section. Click the strip to seek, or use arrow keys on a focused handle. Add the moment to your cut.
-4. Open **Rough cut**, arrange the moments, and export. Rendering runs in real time; keep the tab visible.
-5. Download a project backup to keep a portable copy of your footage and edits.
-
-## How it works
-
-- Plain HTML, CSS, and JavaScript; no dependencies or build step.
-- IndexedDB stores video blobs and project metadata on your device. Browser storage is tied to the origin (host and port); clearing site data deletes the project. Download a backup for important work.
-- Object URLs provide local video playback; metadata and thumbnails are extracted in the browser.
-- Canvas and MediaRecorder render cuts at 1280×720, nominally 30fps, with audio through Web Audio. Output format is selected from the formats your browser supports (normally WebM).
-- Export uses real-time playback, so output can have frame timing variation. It is intended for rough cuts, not frame-accurate finishing. Clips are fitted into a 16:9 frame, with dark bars when needed.
-- Backup JSON includes video files encoded as base64; it is larger than the original footage and requires additional memory. Restore adds clips without replacing the existing project.
-- Search matches names, tags, and notes. This version does not perform AI visual search or transcription.
-
-## Next useful extension
-
-Add timestamped transcripts and scene embeddings, then search for spoken phrases and visual concepts. The existing clip inspector and cut export provide a useful foundation even without AI services.
-
-## Check trim behavior
+Open http://localhost:8765. Current Chrome, Brave, or Edge is recommended for video export.
 
 ```sh
-node trim.test.mjs
+bun test
+bun run typecheck
+bun run build
+bun run start
 ```
+
+## Current stack
+
+- Next.js App Router, React, and TypeScript for the application.
+- Bun for dependency installation, scripts, and tests. The Next.js CLI runs on Node.js.
+- IndexedDB stores the project and video files in your browser.
+- Canvas, MediaRecorder, and Web Audio create the exported video locally.
+- CSS for the interface; no external font requests.
+
+The React components own interface state. Media processing, storage, backup handling, and trimming rules live in separate modules under `src/lib`.
+
+## What works today
+
+- Import videos or generate sample footage locally.
+- Search names, tags, and notes; filter favorites or clips used in your cut.
+- Preview a clip, drag its IN/OUT handles, and add a selected moment.
+- Click the filmstrip to seek. Focus a handle and use arrow keys for small adjustments, Shift+arrows for larger adjustments, or Home/End for the limits.
+- Arrange moments and export a 720p rough cut with audio.
+- Save automatically in the browser and download/restore portable project backups.
+
+Existing projects from the plain JavaScript version use the same IndexedDB schema. Keep the same host and port to access them. Clearing site data removes the browser copy; download a backup for important work.
+
+## End goal: footage search and suggested cuts
+
+You should be able to ask, “Find someone pouring coffee” or “Make a 20-second montage,” and receive actual source clips at the relevant timestamps. The editor is where you inspect and adjust those suggestions before exporting.
+
+The planned AI pipeline is:
+
+1. Extract audio and make a timestamped transcript.
+2. Split the footage into scenes and sample representative frames.
+3. Index transcript segments and visual descriptions with their source timestamps.
+4. Retrieve moments matching the user's request.
+5. Ask a model to propose an ordered cut: clip IDs, in/out times, and reasons.
+6. Validate the proposal against clip bounds, duration limits, and available footage.
+7. Let the user review or change the suggestions, then render the accepted cut.
+
+AI search, transcription, and automatic clip suggestions are **not implemented yet**. This version sends no footage to an AI service and needs no API key.
+
+The proposed hosted extension would use Next.js server routes for job submission, object storage for uploaded media, and a separate FFmpeg worker for audio/frame extraction and final rendering. Long video processing should run in a worker rather than inside a web request. Start with one transcription provider and one model provider after choosing a budget and upload policy; a larger service stack is unnecessary at this stage.
+
+## Export limits
+
+The current export uses real-time playback and normally produces WebM. Keep the tab visible while it renders. Frame timing can vary; this is a rough cut tool rather than a frame-accurate finishing editor. Portrait clips are fitted into a 16:9 frame. Browser support depends on the source video codec.
+
+Backups embed video files as base64 JSON, making them larger than the original files and increasing memory use. Restore adds clips instead of replacing your existing project.
