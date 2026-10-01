@@ -78,7 +78,13 @@ function waitFor(element, event, timeout = 20000) {
 }
 async function seek(video, position) {
   if (Math.abs(video.currentTime - position) < 0.015 && video.readyState >= 2) return;
-  const pending = waitFor(video, 'seeked'); video.currentTime = position; await pending;
+  const pending = waitFor(video, 'seeked');
+  // seeked can fire before the decoded frame reaches canvas on Chromium.
+  const decoded = video.requestVideoFrameCallback ? new Promise(resolve => {
+    const timer = setTimeout(() => { video.cancelVideoFrameCallback(handle); resolve(); }, 1500);
+    const handle = video.requestVideoFrameCallback(() => { clearTimeout(timer); resolve(); });
+  }) : Promise.resolve();
+  video.currentTime = position; await Promise.all([pending, decoded]);
 }
 async function inspect(blob) {
   const video = document.createElement('video'); video.muted = true; video.preload = 'auto'; video.playsInline = true;
