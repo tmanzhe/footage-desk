@@ -16,7 +16,7 @@ Open http://localhost:8765 in current Chrome or Edge. Other browsers may have di
 
 1. Import an H.264 MP4, or click **Try sample footage** to generate three short animated clips locally.
 2. Open a clip. Add tags and notes, and save its details.
-3. Use the video controls to find an interesting section. Set its in/out points and add the moment to your cut.
+3. Drag the IN and OUT handles on the filmstrip to select a section. Click the strip to seek, or use arrow keys on a focused handle. Add the moment to your cut.
 4. Open **Rough cut**, arrange the moments, and export. Rendering runs in real time; keep the tab visible.
 5. Download a project backup to keep a portable copy of your footage and edits.
 
@@ -33,3 +33,9 @@ Open http://localhost:8765 in current Chrome or Edge. Other browsers may have di
 ## Next useful extension
 
 Add timestamped transcripts and scene embeddings, then search for spoken phrases and visual concepts. The existing clip inspector and cut export provide a useful foundation even without AI services.
+
+## Check trim behavior
+
+```sh
+node trim.test.mjs
+```

@@ -1,3 +1,4 @@
+import { moveTrimHandle } from './trim.js';
 const $ = id => document.getElementById(id);
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const time = seconds => { const n = Math.max(0, Math.floor(Number(seconds) || 0)); return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`; };
@@ -129,10 +130,10 @@ function openEditor(id, moment) {
   state.editing = id;
   $('editorTitle').textContent = clip.name; $('nameInput').value = clip.name;
   $('tagsInput').value = clip.tags.join(', '); $('notesInput').value = clip.notes;
-  $('inInput').value = moment ? moment.in.toFixed(1) : '0.0'; $('outInput').value = moment ? moment.out.toFixed(1) : clip.duration.toFixed(1);
+  $('inInput').value = moment ? moment.in.toFixed(2) : '0.00'; $('outInput').value = moment ? moment.out.toFixed(2) : clip.duration.toFixed(2);
   $('inInput').max = clip.duration; $('outInput').max = clip.duration;
   $('momentInput').value = moment?.title || ''; $('editorStatus').textContent = '';
-  $('preview').src = urlFor(clip); $('editor').showModal(); updateSelection();
+  $('preview').src = urlFor(clip); $('trimTimeline').style.backgroundImage = `url(${clip.thumbnail})`; $('timelineEnd').textContent = time(clip.duration); $('editor').showModal(); updateSelection(); updatePlayhead();
   if (previewStop) $('preview').removeEventListener('timeupdate', previewStop);
   previewStop = null;
   if (moment) {
@@ -146,7 +147,7 @@ function openEditor(id, moment) {
 function getSelection() {
   const clip = state.clips.find(c => c.id === state.editing);
   const start = Number($('inInput').value), end = Math.min(Number($('outInput').value), clip?.duration || 0);
-  if (!clip || !Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end - start < 0.1) return null;
+  if (!clip || !Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end - start < 0.1 - 1e-6) return null;
   return { in: start, out: end };
 }
 function updateSelection() {
@@ -155,7 +156,48 @@ function updateSelection() {
   $('addMoment').disabled = !selection;
   $('rangeFill').style.marginLeft = selection ? `${selection.in / clip.duration * 100}%` : '0';
   $('rangeFill').style.width = selection ? `${(selection.out - selection.in) / clip.duration * 100}%` : '0';
+  if (!clip) return;
+  const start = selection?.in || 0, end = selection?.out ?? clip.duration;
+  for (const [id, value, min, max] of [['inHandle', start, 0, Math.max(0, end - .1)], ['outHandle', end, Math.min(clip.duration, start + .1), clip.duration]]) {
+    const handle = $(id); handle.style.left = `${value / clip.duration * 100}%`;
+    handle.setAttribute('aria-valuenow', value.toFixed(2)); handle.setAttribute('aria-valuemin', min.toFixed(2)); handle.setAttribute('aria-valuemax', max.toFixed(2));
+    handle.setAttribute('aria-valuetext', `${value.toFixed(2)} seconds`);
+  }
 }
+function updatePlayhead() {
+  const clip = state.clips.find(c => c.id === state.editing);
+  if (clip) $('trimPlayhead').style.left = `${Math.max(0, Math.min(100, $('preview').currentTime / clip.duration * 100))}%`;
+}
+function moveHandle(edge, value) {
+  const clip = state.clips.find(c => c.id === state.editing); if (!clip) return;
+  const selection = moveTrimHandle(clip.duration, Number($('inInput').value), Number($('outInput').value), edge, value);
+  $('inInput').value = selection.in.toFixed(4); $('outInput').value = selection.out.toFixed(4); updateSelection();
+  $('preview').pause(); $('preview').currentTime = Math.min(selection[edge], Math.max(0, clip.duration - .001)); updatePlayhead();
+}
+for (const edge of ['in', 'out']) {
+  const handle = $(`${edge}Handle`);
+  const moveFromPointer = event => {
+    const clip = state.clips.find(c => c.id === state.editing); if (!clip) return;
+    const bounds = $('trimTimeline').getBoundingClientRect(); moveHandle(edge, (event.clientX - bounds.left) / bounds.width * clip.duration);
+  };
+  handle.addEventListener('pointerdown', event => { event.preventDefault(); event.stopPropagation(); handle.focus(); handle.setPointerCapture(event.pointerId); moveFromPointer(event); });
+  handle.addEventListener('pointermove', event => { if (handle.hasPointerCapture(event.pointerId)) moveFromPointer(event); });
+  handle.addEventListener('pointerup', event => { if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId); });
+  handle.addEventListener('keydown', event => {
+    const clip = state.clips.find(c => c.id === state.editing); if (!clip) return;
+    const current = Number($(`${edge}Input`).value), step = event.shiftKey ? 1 : .1;
+    const keys = { ArrowLeft: current - step, ArrowDown: current - step, ArrowRight: current + step, ArrowUp: current + step, Home: 0, End: clip.duration };
+    if (event.key in keys) { event.preventDefault(); moveHandle(edge, keys[event.key]); }
+  });
+}
+$('trimTimeline').addEventListener('click', event => {
+  if (event.target.closest('.trim-handle')) return;
+  const clip = state.clips.find(c => c.id === state.editing); if (!clip) return;
+  const bounds = $('trimTimeline').getBoundingClientRect();
+  $('preview').currentTime = Math.max(0, Math.min(clip.duration - .001, (event.clientX - bounds.left) / bounds.width * clip.duration)); updatePlayhead();
+});
+$('preview').addEventListener('timeupdate', updatePlayhead);
+
 function updateDetails() {
   const clip = state.clips.find(c => c.id === state.editing); if (!clip) return;
   clip.name = $('nameInput').value.trim() || 'Untitled clip';
