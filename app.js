@@ -254,6 +254,44 @@ async function loadDemo() {
   } catch (error) { status(`Could not create samples: ${error.message}`); }
   finally { state.importing = false; $('demoButton').disabled = false; $('importButton').disabled = false; }
 }
+const readDataURL = blob => new Promise((resolve, reject) => {
+  const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(reader.error);
+  // Codec parameters can contain commas, which conflict with the data URL separator.
+  reader.readAsDataURL(blob.slice(0, blob.size, blob.type.split(';')[0] || 'video/webm'));
+});
+async function backup() {
+  $('backupButton').disabled = true;
+  try {
+    status('Preparing backup with your video files. Large projects may take a moment.', true);
+    const clips = [];
+    for (const clip of state.clips) { const { blob, ...details } = clip; clips.push({ ...details, data: await readDataURL(blob) }); }
+    download(new Blob([JSON.stringify({ version: 1, clips, moments: state.moments })], { type: 'application/json' }), 'footage-desk-project.json');
+    status('Backup downloaded. It contains your videos, tags, notes, and cut.');
+  } catch (error) { status(`Backup failed: ${error.message}`); }
+  finally { $('backupButton').disabled = false; }
+}
+async function restore(file) {
+  if (!file || state.importing || state.exporting) return;
+  try {
+    const project = JSON.parse(await file.text());
+    if (project.version !== 1 || !Array.isArray(project.clips) || !Array.isArray(project.moments)) throw new Error('Not a Footage Desk backup.');
+    const clips = [], mapping = new Map();
+    for (const item of project.clips) {
+      if (typeof item.id !== 'string' || mapping.has(item.id) || typeof item.data !== 'string' || !/^data:video\/[a-z0-9.+-]+(?:;[^,]*)?;base64,/i.test(item.data)) throw new Error('Invalid video in backup.');
+      const { data } = item; const blob = await (await fetch(data)).blob(); const details = await inspect(blob);
+      const id = uid(); mapping.set(item.id, id);
+      clips.push({ id, blob, ...details, name: String(item.name || 'Restored clip').slice(0, 160), tags: Array.isArray(item.tags) ? item.tags.map(t => String(t).slice(0, 100)).slice(0, 50) : [], notes: String(item.notes || '').slice(0, 5000), favorite: !!item.favorite });
+    }
+    const moments = project.moments.map(item => {
+      const id = mapping.get(item.clipId), clip = clips.find(c => c.id === id);
+      if (!clip || !Number.isFinite(item.in) || !Number.isFinite(item.out) || item.in < 0 || item.out > clip.duration + .1 || item.out - item.in < .1) throw new Error('Invalid moment in backup.');
+      return { id: uid(), clipId: id, in: item.in, out: Math.min(item.out, clip.duration), title: String(item.title || '').slice(0, 160) };
+    });
+    state.clips.push(...clips); state.moments.push(...moments); await persist(); render();
+    status(`Restored ${clips.length} clips and ${moments.length} moments. Existing clips were kept.`);
+  } catch (error) { status(`Restore failed: ${error.message}`); }
+  finally { $('restoreInput').value = ''; }
+}
 for (const id of ['importButton', 'emptyImport']) $(id).onclick = () => $('fileInput').click();
 $('fileInput').onchange = event => importFiles(event.target.files);
 $('demoButton').onclick = loadDemo; $('libraryNav').onclick = () => switchView('library');
@@ -293,7 +331,8 @@ $('timeline').onclick = async event => {
 };
 $('exportButton').onclick = renderCut; $('cancelExport').onclick = () => { state.cancel = true; };
 $('exportDialog').addEventListener('cancel', event => { event.preventDefault(); state.cancel = true; });
-$('backupButton').hidden = true; $('restoreButton').hidden = true;
+$('backupButton').onclick = backup; $('restoreButton').onclick = () => $('restoreInput').click();
+$('restoreInput').onchange = event => restore(event.target.files[0]);
 let dragDepth = 0;
 document.addEventListener('dragenter', event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); dragDepth++; $('dropOverlay').hidden = false; } });
 document.addEventListener('dragover', event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); });
