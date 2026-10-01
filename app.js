@@ -165,6 +165,58 @@ function recordingType() {
   if (!window.MediaRecorder) return null;
   return ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'].find(t => MediaRecorder.isTypeSupported(t));
 }
+async function renderCut() {
+  if (state.exporting || !state.moments.length) return;
+  const mime = recordingType();
+  if (!mime || !HTMLCanvasElement.prototype.captureStream) { status('Video export is unavailable in this browser. Try current Chrome or Edge.'); return; }
+  state.exporting = true; state.cancel = false; render(); $('exportProgress').value = 0; $('exportProgressText').textContent = 'Preparing footage…'; $('exportDialog').showModal();
+  let recorder, stream, chunks = [];
+  const canvas = document.createElement('canvas'); canvas.width = 1280; canvas.height = 720;
+  const ctx = canvas.getContext('2d');
+  const total = state.moments.reduce((sum, m) => sum + m.out - m.in, 0);
+  try {
+    exportAudio ||= new (window.AudioContext || window.webkitAudioContext)(); await exportAudio.resume();
+    exportSource ||= exportAudio.createMediaElementSource(exportVideo);
+    const destination = exportAudio.createMediaStreamDestination(); exportSource.connect(destination);
+    stream = canvas.captureStream(30); destination.stream.getAudioTracks().forEach(track => stream.addTrack(track));
+    recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 5000000 });
+    const finished = new Promise((resolve, reject) => { recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); }; recorder.onstop = resolve; recorder.onerror = e => reject(e.error || new Error('Recording failed')); });
+    let completed = 0;
+    for (const [index, moment] of state.moments.entries()) {
+      if (state.cancel) break;
+      const clip = state.clips.find(c => c.id === moment.clipId);
+      const loaded = waitFor(exportVideo, 'loadeddata'); exportVideo.src = urlFor(clip); await loaded;
+      await seek(exportVideo, moment.in); drawFit(ctx, exportVideo, 1280, 720);
+      if (recorder.state === 'inactive') recorder.start(250); else recorder.resume();
+      await exportVideo.play();
+      await new Promise(resolve => {
+        const paint = () => {
+          drawFit(ctx, exportVideo, 1280, 720);
+          const elapsed = Math.max(0, Math.min(exportVideo.currentTime - moment.in, moment.out - moment.in));
+          $('exportProgress').value = (completed + elapsed) / total * 100;
+          $('exportProgressText').textContent = `Clip ${index + 1}/${state.moments.length} · ${time(completed + elapsed)} / ${time(total)}`;
+          if (state.cancel || exportVideo.ended || exportVideo.currentTime >= moment.out) { exportVideo.pause(); resolve(); }
+          else requestAnimationFrame(paint);
+        }; requestAnimationFrame(paint);
+      });
+      recorder.pause(); completed += moment.out - moment.in;
+    }
+    if (recorder.state !== 'inactive') { recorder.stop(); await finished; }
+    exportSource.disconnect(destination);
+    if (!state.cancel) {
+      download(new Blob(chunks, { type: mime }), `footage-desk-cut-${new Date().toISOString().slice(0, 10)}.${mime.startsWith('video/mp4') ? 'mp4' : 'webm'}`);
+      status('Your rough cut is ready. The video download has started.');
+    } else status('Render cancelled. Your project is saved.');
+  } catch (error) {
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    if (exportSource) exportSource.disconnect();
+    status(`Export failed: ${error.message}`);
+  } finally {
+    exportVideo.pause(); exportVideo.removeAttribute('src'); exportVideo.load();
+    stream?.getTracks().forEach(track => track.stop());
+    state.exporting = false; $('exportDialog').close(); render();
+  }
+}
 async function sampleVideo(index) {
   const canvas = document.createElement('canvas'); canvas.width = 960; canvas.height = 540;
   const ctx = canvas.getContext('2d');
@@ -239,7 +291,7 @@ $('timeline').onclick = async event => {
   else { const target = index + (action === 'up' ? -1 : 1); [state.moments[index], state.moments[target]] = [state.moments[target], state.moments[index]]; }
   render(); await persist();
 };
-$('exportButton').hidden = true; $('cancelExport').onclick = () => { state.cancel = true; };
+$('exportButton').onclick = renderCut; $('cancelExport').onclick = () => { state.cancel = true; };
 $('exportDialog').addEventListener('cancel', event => { event.preventDefault(); state.cancel = true; });
 $('backupButton').hidden = true; $('restoreButton').hidden = true;
 let dragDepth = 0;
