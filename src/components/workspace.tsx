@@ -138,7 +138,7 @@ export default function Workspace() {
       <div className="workspace-label">YOUR WORKSPACE</div>
       <button className={`nav ${view === 'library' ? 'active' : ''}`} onClick={() => setView('library')}><span>▦</span> Clip library <span className="count">{clips.length}</span></button>
       <button className={`nav ${view === 'cut' ? 'active' : ''}`} onClick={() => setView('cut')}><span>▤</span> Rough cut <span className="count">{moments.length}</span></button>
-      <div className="sidebar-note"><span className="local-dot" /> Your footage stays here<p>Stored in this browser.<br />No uploads. No account.</p></div>
+      <div className="sidebar-note"><span className="local-dot" /> A local workspace<p>Videos saved in this browser.<br />Optional AI shares sampled frames only when you choose.</p></div>
       <div className="sidebar-bottom">A little less searching.<br />A lot more making.</div>
     </aside>
     <main>

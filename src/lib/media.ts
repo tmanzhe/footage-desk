@@ -1,21 +1,45 @@
 import type { Clip, Moment } from './types';
+import type { Frame } from './ai-planner';
 
-export function waitFor(video: HTMLVideoElement, event: string, timeout = 20000): Promise<void> {
+export async function sampleFrames(clip: Clip, signal: AbortSignal): Promise<Frame[]> {
+  const video = document.createElement('video'); video.muted = true; video.preload = 'auto'; video.playsInline = true;
+  const url = URL.createObjectURL(clip.blob), canvas = document.createElement('canvas');
+  canvas.width = 320; canvas.height = 180;
+  try {
+    signal.throwIfAborted();
+    const loaded = waitFor(video, 'loadeddata', 20000, signal); video.src = url; await loaded;
+    const frames: Frame[] = [];
+    for (const fraction of [.15, .5, .85]) {
+      signal.throwIfAborted(); const position = clip.duration * fraction;
+      await seek(video, position, signal); signal.throwIfAborted();
+      drawFit(canvas.getContext('2d')!, video, 320, 180);
+      frames.push({ time: position, image: canvas.toDataURL('image/jpeg', .65) });
+    }
+    return frames;
+  } finally { video.removeAttribute('src'); video.load(); URL.revokeObjectURL(url); }
+}
+
+export function waitFor(video: HTMLVideoElement, event: string, timeout = 20000, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => done(new Error('Video loading timed out. Try a smaller file or an H.264 MP4.')), timeout);
     const success = () => done();
     const failure = () => done(new Error('This video cannot be decoded by your browser. Try an H.264 MP4.'));
+    const aborted = () => done(new DOMException('Cancelled', 'AbortError'));
     function done(error?: Error) {
       clearTimeout(timer); video.removeEventListener(event, success); video.removeEventListener('error', failure);
+      signal?.removeEventListener('abort', aborted);
       if (error) reject(error); else resolve();
     }
     video.addEventListener(event, success, { once: true }); video.addEventListener('error', failure, { once: true });
+    signal?.addEventListener('abort', aborted, { once: true });
+    if (signal?.aborted) aborted();
   });
 }
 
-export async function seek(video: HTMLVideoElement, position: number) {
+export async function seek(video: HTMLVideoElement, position: number, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   if (Math.abs(video.currentTime - position) < .015 && video.readyState >= 2) return;
-  const pending = waitFor(video, 'seeked');
+  const pending = waitFor(video, 'seeked', 20000, signal);
   const decoded = video.requestVideoFrameCallback ? new Promise<void>(resolve => {
     const timer = setTimeout(() => { video.cancelVideoFrameCallback(handle); resolve(); }, 1500);
     const handle = video.requestVideoFrameCallback(() => { clearTimeout(timer); resolve(); });
