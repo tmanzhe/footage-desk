@@ -11,10 +11,11 @@ interface Props {
   onClose: () => void;
   onSave: (clip: Clip) => void;
   onAdd: (moment: Moment) => void;
-  onDelete: () => void;
+  onDelete?: () => void;
+  actionLabel?: string;
 }
 
-export default function ClipEditor({ clip, moment, onClose, onSave, onAdd, onDelete }: Props) {
+export default function ClipEditor({ clip, moment, onClose, onSave, onAdd, onDelete, actionLabel = '＋ Add moment to cut' }: Props) {
   const dialog = useRef<HTMLDialogElement>(null), video = useRef<HTMLVideoElement>(null), strip = useRef<HTMLDivElement>(null);
   const [url, setURL] = useState('');
   const [selection, setSelection] = useState<Selection>({ in: moment?.in ?? 0, out: moment?.out ?? clip.duration });
@@ -92,12 +93,12 @@ export default function ClipEditor({ clip, moment, onClose, onSave, onAdd, onDel
         <label>Notes<textarea rows={5} value={notes} onChange={e => setNotes(e.target.value)} placeholder="What makes this shot a keeper?" maxLength={5000} /></label>
         <label>Moment title<input value={title} onChange={e => setTitle(e.target.value)} placeholder="Opening shot" maxLength={160} /></label>
         <button className="button primary full" disabled={!valid} onClick={() => {
-          save(); onAdd({ id: crypto.randomUUID(), clipId: clip.id, ...selection, title: title.trim() }); setMessage('Moment added. Open Rough cut to arrange and export it.');
-        }}>＋ Add moment to cut</button>
+          save(); onAdd({ id: moment?.id || crypto.randomUUID(), clipId: clip.id, ...selection, title: title.trim() }); setMessage('Moment saved. Open Rough cut to arrange and export it.');
+        }}>{actionLabel}</button>
         <button className="button secondary full" onClick={() => { save(); setMessage('Clip details saved.'); }}>Save clip details</button>
-        <button className="delete-button" onClick={() => {
+        {onDelete && <button className="delete-button" onClick={() => {
           if (confirm(`Remove “${clip.name}” and its moments? Your original file stays on your device.`)) { video.current?.pause(); onDelete(); }
-        }}>Remove clip from library</button>
+        }}>Remove clip from library</button>}
         <p role="status" className="muted">{message}</p>
       </div>
     </div>

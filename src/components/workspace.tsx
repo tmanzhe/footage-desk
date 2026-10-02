@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import ClipEditor from './clip-editor';
+import CutPlanner from './cut-planner';
 import type { Clip, Moment } from '@/lib/types';
 import { time } from '@/lib/types';
 import { download, inspect, renderCut, sampleVideo } from '@/lib/media';
@@ -146,6 +147,7 @@ export default function Workspace() {
       <input ref={files} type="file" accept="video/*" multiple hidden onChange={event => { if (event.target.files) void importFiles(event.target.files); }} />
       <div id="status" role="status" aria-live="polite">{!ready ? 'Opening your workspace…' : status}</div>
       <section className="stats"><div><span>{String(clips.length).padStart(2, '0')}</span><p>clips in your library</p></div><div><span>{time(clips.reduce((a, c) => a + c.duration, 0))}</span><p>of footage to explore</p></div><div><span>{String(moments.length).padStart(2, '0')}</span><p>moments in your cut</p></div><div className="stats-tip"><span>THE SMALL STUDIO MINDSET</span><p>A great edit starts with<br />knowing what you have.</p></div></section>
+      <CutPlanner clips={clips} disabled={disabled} onSave={updated => setClips(old => old.map(c => c.id === updated.id ? updated : c))} onAdd={added => { setMoments(old => [...old, ...added]); setStatus('Suggested moments added. Open Rough cut to arrange and export them.'); }} />
       {view === 'library' ? <section>
         <div className="section-toolbar"><h2>The library <span>{clips.length ? `(${shown.length})` : ''}</span></h2><label className="search"><span>⌕</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search names, tags, or notes…" aria-label="Search footage" /></label></div>
         <div className="filters">{([['all', 'All footage'], ['favorites', '★ Favorites'], ['used', 'In your cut']] as const).map(([value, label]) => <button key={value} className={`chip ${filter === value ? 'selected' : ''}`} onClick={() => setFilter(value)}>{label}</button>)}<span className="filter-note">Drop videos anywhere to import</span></div>
@@ -167,7 +169,7 @@ export default function Workspace() {
       <footer><span>MADE FOR THE FIRST DRAFT.</span><button disabled={disabled} onClick={() => void backup()}>Download project backup ↓</button><button disabled={disabled} onClick={() => restore.current?.click()}>Restore backup</button><input ref={restore} type="file" accept=".json,application/json" hidden onChange={e => void restoreFile(e.target.files?.[0])} /><span className="footer-right">Make room for the good stuff.</span></footer>
     </main>
     {activeClip && editing && <ClipEditor key={`${activeClip.id}-${editing.moment?.id || 'clip'}`} clip={activeClip} moment={editing.moment} onClose={() => setEditing(null)}
-      onSave={updated => setClips(old => old.map(c => c.id === updated.id ? updated : c))} onAdd={moment => setMoments(old => [...old, moment])}
+      onSave={updated => setClips(old => old.map(c => c.id === updated.id ? updated : c))} actionLabel={editing.moment ? 'Save moment' : undefined} onAdd={moment => setMoments(old => old.some(m => m.id === moment.id) ? old.map(m => m.id === moment.id ? moment : m) : [...old, moment])}
       onDelete={() => { setClips(old => old.filter(c => c.id !== activeClip.id)); setMoments(old => old.filter(m => m.clipId !== activeClip.id)); setEditing(null); setStatus('Clip removed from this project.'); }} />}
     <dialog ref={exportDialog} id="exportDialog" onCancel={e => { e.preventDefault(); controller.current?.abort(); }}><div className="export-modal"><div className="eyebrow">YOUR STORY, COMING TOGETHER</div><h2>Rendering your cut.</h2><p>{progress.seconds ? `Clip ${progress.index + 1}/${moments.length} · ${time(progress.seconds)} / ${time(progress.total)}` : 'Preparing footage…'}</p><progress max={100} value={progress.total ? progress.seconds / progress.total * 100 : 0} /><p className="muted">Keep this tab visible. Rendering takes about as long as your cut.</p><button className="button secondary" onClick={() => controller.current?.abort()}>Cancel render</button></div></dialog>
     {dropping && <div id="dropOverlay"><span>＋</span><h2>Drop your next story here.</h2><p>Videos stay on your device.</p></div>}
