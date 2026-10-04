@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import ClipEditor from './clip-editor';
 import CutPlanner from './cut-planner';
+import CutPlayer from './cut-player';
 import type { Clip, Moment } from '@/lib/types';
 import { time } from '@/lib/types';
 import { download, inspect, renderCut, sampleVideo } from '@/lib/media';
@@ -159,6 +160,7 @@ export default function Workspace() {
         {!clips.length && <div className="empty"><div className="empty-icon">＋</div><h3>Give your footage a home.</h3><p>Import videos from your camera, phone, or desktop.<br />Tag the keepers and build something worth sharing.</p><button className="button primary" disabled={disabled} onClick={() => files.current?.click()}>Import your first clips</button><span>MP4, MOV, and WebM · playback depends on your browser</span></div>}
       </section> : <section>
         <div className="section-toolbar"><div><h2>Your rough cut <span>{moments.length ? `· ${time(cutDuration)}` : ''}</span></h2><p className="muted">The best bits, in the order you want them.</p></div><button className="button primary" disabled={disabled || !moments.length} onClick={() => void exportCut()}>Export video ↗</button></div>
+        {!!moments.length && <CutPlayer key={moments.map(m => `${m.id}:${m.in}:${m.out}`).join('|')} clips={clips} moments={moments} disabled={disabled || !!editing} />}
         {moments.map((moment, index) => {
           const clip = clips.find(c => c.id === moment.clipId); if (!clip) return null;
           return <article className="timeline-item" key={moment.id}><span className="timeline-number">{String(index + 1).padStart(2, '0')}</span><img src={clip.thumbnail} alt="" /><div className="timeline-info"><h3>{moment.title || clip.name}</h3><p>{clip.name} · {moment.in.toFixed(1)}s–{moment.out.toFixed(1)}s · {time(moment.out - moment.in)}</p></div><div className="timeline-actions"><button aria-label="Preview moment" onClick={() => setEditing({ id: clip.id, moment })}>▶</button><button disabled={index === 0} aria-label="Move moment up" onClick={() => reorder(index, -1)}>↑</button><button disabled={index === moments.length - 1} aria-label="Move moment down" onClick={() => reorder(index, 1)}>↓</button><button aria-label="Remove moment" onClick={() => setMoments(old => old.filter(m => m.id !== moment.id))}>✕</button></div></article>;
