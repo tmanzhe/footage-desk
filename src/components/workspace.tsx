@@ -9,6 +9,7 @@ import { time } from '@/lib/types';
 import { download, inspect, renderCut, sampleVideo } from '@/lib/media';
 import { createBackup, restoreBackup } from '@/lib/backup';
 import { loadProject, openDatabase, saveProject } from '@/lib/storage';
+import { moveMoment } from '@/lib/sequence';
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong.';
 
@@ -22,6 +23,9 @@ export default function Workspace() {
   const files = useRef<HTMLInputElement>(null), restore = useRef<HTMLInputElement>(null), exportDialog = useRef<HTMLDialogElement>(null);
   const db = useRef<IDBDatabase | null>(null), controller = useRef<AbortController | null>(null), busyRef = useRef(false);
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const drag = useRef<{ from: string; target: string } | null>(null);
+  const [dragTarget, setDragTarget] = useState<string | null>(null);
+  const [undoCut, setUndoCut] = useState<Moment[] | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -120,6 +124,7 @@ export default function Workspace() {
     if (!file || !begin()) return;
     try {
       setStatus('Restoring project…'); const project = await restoreBackup(file);
+      setUndoCut(null);
       setClips(old => [...old, ...project.clips]); setMoments(old => [...old, ...project.moments]);
       setStatus(`Restored ${project.clips.length} clips and ${project.moments.length} moments. Existing clips were kept.`);
     } catch (error) { setStatus(`Restore failed: ${errorMessage(error)}`); }
@@ -127,7 +132,16 @@ export default function Workspace() {
   }
 
   function reorder(index: number, delta: number) {
-    setMoments(old => { const next = [...old], target = index + delta; [next[index], next[target]] = [next[target], next[index]]; return next; });
+    const target = moments[index + delta]; if (!target || disabled) return;
+    changeCut(moveMoment(moments, moments[index].id, target.id));
+  }
+  function changeCut(next: Moment[]) {
+    if (next === moments) return;
+    setUndoCut(moments); setMoments(next);
+  }
+  function dropShot() {
+    if (drag.current && !disabled) changeCut(moveMoment(moments, drag.current.from, drag.current.target));
+    drag.current = null; setDragTarget(null);
   }
 
   return <div onDragEnter={event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); setDropping(true); } }}
@@ -148,7 +162,7 @@ export default function Workspace() {
       <input ref={files} type="file" accept="video/*" multiple hidden onChange={event => { if (event.target.files) void importFiles(event.target.files); }} />
       <div id="status" role="status" aria-live="polite">{!ready ? 'Opening your workspace…' : status}</div>
       <section className="stats"><div><span>{String(clips.length).padStart(2, '0')}</span><p>clips in your library</p></div><div><span>{time(clips.reduce((a, c) => a + c.duration, 0))}</span><p>of footage to explore</p></div><div><span>{String(moments.length).padStart(2, '0')}</span><p>moments in your cut</p></div><div className="stats-tip"><span>THE SMALL STUDIO MINDSET</span><p>A great edit starts with<br />knowing what you have.</p></div></section>
-      <CutPlanner clips={clips} disabled={disabled} onSave={updated => setClips(old => old.map(c => c.id === updated.id ? updated : c))} onAdd={added => { setMoments(old => [...old, ...added]); setStatus('Suggested moments added. Open Rough cut to arrange and export them.'); }} />
+      <CutPlanner clips={clips} disabled={disabled} onSave={updated => setClips(old => old.map(c => c.id === updated.id ? updated : c))} onAdd={added => { setUndoCut(null); setMoments(old => [...old, ...added]); setStatus('Suggested moments added. Open Rough cut to arrange and export them.'); }} />
       {view === 'library' ? <section>
         <div className="section-toolbar"><h2>The library <span>{clips.length ? `(${shown.length})` : ''}</span></h2><label className="search"><span>⌕</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search names, tags, or notes…" aria-label="Search footage" /></label></div>
         <div className="filters">{([['all', 'All footage'], ['favorites', '★ Favorites'], ['used', 'In your cut']] as const).map(([value, label]) => <button key={value} className={`chip ${filter === value ? 'selected' : ''}`} onClick={() => setFilter(value)}>{label}</button>)}<span className="filter-note">Drop videos anywhere to import</span></div>
@@ -161,9 +175,19 @@ export default function Workspace() {
       </section> : <section>
         <div className="section-toolbar"><div><h2>Your rough cut <span>{moments.length ? `· ${time(cutDuration)}` : ''}</span></h2><p className="muted">The best bits, in the order you want them.</p></div><button className="button primary" disabled={disabled || !moments.length} onClick={() => void exportCut()}>Export video ↗</button></div>
         {!!moments.length && <CutPlayer key={moments.map(m => `${m.id}:${m.in}:${m.out}`).join('|')} clips={clips} moments={moments} disabled={disabled || !!editing} />}
+        {(!!moments.length || undoCut) && <div className="cut-edit-tools"><p className="muted">Drag a shot by its grip to reorder. The arrow buttons work with a keyboard.</p><button className="button secondary small" disabled={disabled || !undoCut} onClick={() => { if (undoCut) { setMoments(undoCut.filter(m => clips.some(c => c.id === m.clipId))); setUndoCut(null); setStatus('Last timeline change undone.'); } }}>Undo last change</button></div>}
         {moments.map((moment, index) => {
           const clip = clips.find(c => c.id === moment.clipId); if (!clip) return null;
-          return <article className="timeline-item" key={moment.id}><span className="timeline-number">{String(index + 1).padStart(2, '0')}</span><img src={clip.thumbnail} alt="" /><div className="timeline-info"><h3>{moment.title || clip.name}</h3><p>{clip.name} · {moment.in.toFixed(1)}s–{moment.out.toFixed(1)}s · {time(moment.out - moment.in)}</p></div><div className="timeline-actions"><button aria-label="Preview moment" onClick={() => setEditing({ id: clip.id, moment })}>▶</button><button disabled={index === 0} aria-label="Move moment up" onClick={() => reorder(index, -1)}>↑</button><button disabled={index === moments.length - 1} aria-label="Move moment down" onClick={() => reorder(index, 1)}>↓</button><button aria-label="Remove moment" onClick={() => setMoments(old => old.filter(m => m.id !== moment.id))}>✕</button></div></article>;
+          return <article className={`timeline-item ${dragTarget === moment.id ? 'drop-target' : ''}`} data-moment-id={moment.id} key={moment.id}>
+            <button className="shot-grip" disabled={disabled} aria-label={`Drag shot ${index + 1} to reorder`} onPointerDown={e => {
+              e.preventDefault(); e.currentTarget.focus(); e.currentTarget.setPointerCapture(e.pointerId); drag.current = { from: moment.id, target: moment.id }; setDragTarget(moment.id);
+            }} onPointerMove={e => {
+              if (!drag.current || !e.currentTarget.hasPointerCapture(e.pointerId)) return;
+              const row = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-moment-id]');
+              if (row?.dataset.momentId) { drag.current.target = row.dataset.momentId; setDragTarget(row.dataset.momentId); }
+              else { drag.current.target = drag.current.from; setDragTarget(null); }
+            }} onPointerUp={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); dropShot(); }} onPointerCancel={() => { drag.current = null; setDragTarget(null); }} onKeyDown={e => { if (e.key === 'Escape') { drag.current = null; setDragTarget(null); } }}>⠿</button>
+            <span className="timeline-number">{String(index + 1).padStart(2, '0')}</span><img src={clip.thumbnail} alt="" /><div className="timeline-info"><h3>{moment.title || clip.name}</h3><p>{clip.name} · {moment.in.toFixed(1)}s–{moment.out.toFixed(1)}s · {time(moment.out - moment.in)}</p></div><div className="timeline-actions"><button disabled={disabled} aria-label="Edit moment" onClick={() => setEditing({ id: clip.id, moment })}>✎</button><button disabled={disabled || index === 0} aria-label="Move moment up" onClick={() => reorder(index, -1)}>↑</button><button disabled={disabled || index === moments.length - 1} aria-label="Move moment down" onClick={() => reorder(index, 1)}>↓</button><button disabled={disabled} aria-label="Remove moment" onClick={() => changeCut(moments.filter(m => m.id !== moment.id))}>✕</button></div></article>;
         })}
         {!moments.length && <div className="empty"><div className="empty-icon">▤</div><h3>Every story starts with a moment.</h3><p>Open a clip, drag the trim handles,<br />then add that moment to your cut.</p><button className="button secondary" onClick={() => setView('library')}>Browse footage</button></div>}
         {!!moments.length && <p className="export-note">Exports a 720p video in real time. Keep this tab visible while it renders. Portrait clips are fitted inside a 16:9 frame.</p>}
@@ -171,8 +195,8 @@ export default function Workspace() {
       <footer><span>MADE FOR THE FIRST DRAFT.</span><button disabled={disabled} onClick={() => void backup()}>Download project backup ↓</button><button disabled={disabled} onClick={() => restore.current?.click()}>Restore backup</button><input ref={restore} type="file" accept=".json,application/json" hidden onChange={e => void restoreFile(e.target.files?.[0])} /><span className="footer-right">Make room for the good stuff.</span></footer>
     </main>
     {activeClip && editing && <ClipEditor key={`${activeClip.id}-${editing.moment?.id || 'clip'}`} clip={activeClip} moment={editing.moment} onClose={() => setEditing(null)}
-      onSave={updated => setClips(old => old.map(c => c.id === updated.id ? updated : c))} actionLabel={editing.moment ? 'Save moment' : undefined} onAdd={moment => setMoments(old => old.some(m => m.id === moment.id) ? old.map(m => m.id === moment.id ? moment : m) : [...old, moment])}
-      onDelete={() => { setClips(old => old.filter(c => c.id !== activeClip.id)); setMoments(old => old.filter(m => m.clipId !== activeClip.id)); setEditing(null); setStatus('Clip removed from this project.'); }} />}
+      onSave={updated => setClips(old => old.map(c => c.id === updated.id ? updated : c))} actionLabel={editing.moment ? 'Save moment' : undefined} onAdd={moment => { setUndoCut(moments); setMoments(old => old.some(m => m.id === moment.id) ? old.map(m => m.id === moment.id ? moment : m) : [...old, moment]); }}
+      onDelete={() => { setUndoCut(null); setClips(old => old.filter(c => c.id !== activeClip.id)); setMoments(old => old.filter(m => m.clipId !== activeClip.id)); setEditing(null); setStatus('Clip removed from this project.'); }} />}
     <dialog ref={exportDialog} id="exportDialog" onCancel={e => { e.preventDefault(); controller.current?.abort(); }}><div className="export-modal"><div className="eyebrow">YOUR STORY, COMING TOGETHER</div><h2>Rendering your cut.</h2><p>{progress.seconds ? `Clip ${progress.index + 1}/${moments.length} · ${time(progress.seconds)} / ${time(progress.total)}` : 'Preparing footage…'}</p><progress max={100} value={progress.total ? progress.seconds / progress.total * 100 : 0} /><p className="muted">Keep this tab visible. Rendering takes about as long as your cut.</p><button className="button secondary" onClick={() => controller.current?.abort()}>Cancel render</button></div></dialog>
     {dropping && <div id="dropOverlay"><span>＋</span><h2>Drop your next story here.</h2><p>Videos stay on your device.</p></div>}
   </div>;

@@ -31,6 +31,7 @@ export default function CutPlayer({ clips, moments, disabled }: { clips: Clip[];
     const loaded = () => {
       ready.current = true;
       player.currentTime = Math.min(desiredTime.current ?? shot.moment.in, Math.max(0, shot.clip.duration - .001));
+      setPosition(shot.start + Math.max(0, player.currentTime - shot.moment.in));
       desiredTime.current = null; setLoading(false); void play();
     };
     const failed = () => { setLoading(false); pause(); setError('This shot could not be decoded. Open its source clip or try an H.264 MP4.'); };
