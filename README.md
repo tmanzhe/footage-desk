@@ -38,6 +38,8 @@ The React components own interface state. Media processing, storage, backup hand
 - Optionally use AI to suggest an ordered cut from sampled video frames.
 - Click the filmstrip to seek. Focus a handle and use arrow keys for small adjustments, Shift+arrows for larger adjustments, or Home/End for the limits.
 - Arrange moments and export a 720p rough cut with audio.
+- Watch the full cut with one player, slide its scrub bar, or jump directly to a shot.
+- Drag a shot's grip to reorder; arrow buttons provide a keyboard alternative. Undo the last reorder, removal, addition from the clip editor, or trim change.
 - Save automatically in the browser and download/restore portable project backups.
 
 Existing projects from the plain JavaScript version use the same IndexedDB schema. Keep the same host and port to access them. Clearing site data removes the browser copy; download a backup for important work.
@@ -45,6 +47,8 @@ Existing projects from the plain JavaScript version use the same IndexedDB schem
 ## Plan your first cut
 
 Import your footage and use **What are we making?** above the library. Try a brief such as “warm morning,” or leave it blank for a starter montage. The local planner matches words in names, tags, and notes, then proposes center trims. It does not inspect visual content. Use **Preview & trim** to drag each shot's handles, check the moments you want, and click **Add selected to cut**. Open **Rough cut** to reorder and export.
+
+In **Rough cut**, press **Play cut** to watch the selected ranges in sequence. Slide the scrub bar or click a thumbnail below it to jump to a shot. Scrubbing pauses playback. The preview loads source files as it switches shots, so there may be a brief pause between files. Drag the grip beside a timeline row onto another row to move it there, or use the arrow buttons. Use the pencil button to adjust a shot's trim. **Undo last change** restores one timeline edit; undo history is not saved across reloads and resets when you restore a backup, remove source footage, or add a planner batch.
 
 Target length is an upper bound for generated suggestions. The planner may return a shorter cut if it has too little relevant footage. Manual edits can change that length. Suggestions stay separate from your saved cut until you add them; unaccepted suggestions are not saved across reloads.
 
